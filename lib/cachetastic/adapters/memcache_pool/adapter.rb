@@ -1,8 +1,34 @@
-module Cachetastic
+module Cachetastic # :nodoc:
   module Adapters
     module MemcachePool
+      # An adapter to cache objects to the file system.
+      # 
+      # This adapter supports the following configuration settings,
+      # in addition to the default settings:
+      # 
+      #   configatron.cachetastic.defaults.servers = ['127.0.0.1:11211']
+      #   configatron.cachetastic.defaults.mc_options = {:c_threshold => 10_000,
+      #                                                  :compression => true,
+      #                                                  :debug => false,
+      #                                                  :readonly => false,
+      #                                                  :urlencode => false}
+      #   configatron.cachetastic.delete_delay = 0
+      # 
+      # The <tt>servers</tt> setting defines an <tt>Array</tt> of Mecached
+      # servers, represented as "<host>:<port>".
+      # 
+      # The <tt>mc_options</tt> setting is a <tt>Hash</tt> of settings required
+      # by Memcached. See the Memcached documentation for more information on
+      # what the settings mean.
+      # 
+      # The <tt>delete_delay</tt> setting tells Memcached how long to wait
+      # before it deletes the object. This is not the same as <tt>expiry_time</tt>.
+      # It is only used when the <tt>delete</tt> method is called.
+      # 
+      # See <tt>Cachetastic::Adapters::Base</tt> for a list of public API
+      # methods.
       class Adapter < Cachetastic::Adapters::Base
-
+        
         def initialize(klass) # :nodoc:
           define_accessor(:servers)
           define_accessor(:mc_options)
@@ -55,14 +81,11 @@ module Cachetastic
           end
           @_mc_connection
         end
-        
+
         def ns_connection
-          if !@_ns_connection || !@_ns_connection.active?
-            @_ns_connection = MemCache.new(self.servers, self.mc_options.merge(:namespace => :namespace_versions))
-          end
-          @_ns_connection
+          self.class.ns_connection(self)
         end
-        
+
         def increment_version
           name = self.klass.name
           v = get_version
@@ -83,7 +106,36 @@ module Cachetastic
           @_ns_version = get_version
           "#{self.klass.name}.#{@_ns_version}"
         end
-      end
-    end
-  end
-end
+
+        class << self
+          def reset_connections
+            @_ns_connections_by_klass = {}
+            @_ns_connections_by_digest = {}
+          end
+
+          def connection_digest(adapter)
+            {:servers => adapter.servers, :mc_options => adapter.mc_options}.to_s.hexdigest
+          end
+
+          def ns_connection(adapter)
+            @_ns_connections_by_klass   ||= {}
+            @_ns_connections_by_digest  ||= {}
+
+            matching_connection = @_ns_connections_by_klass[adapter.klass.name]
+            if !matching_connection || !matching_connection.active?
+              digest = connection_digest(adapter)
+              matching_connection = @_ns_connections_by_digest[digest]
+              if !matching_connection || !matching_connection.active?
+                matching_connection = MemCache.new(adapter.servers, adapter.mc_options.merge(:namespace => :namespace_versions))
+              end
+              @_ns_connections_by_digest[digest] = matching_connection
+            end
+            @_ns_connections_by_klass[adapter.klass.name] = matching_connection
+            matching_connection
+          end
+        end
+
+      end # Adapter
+    end # MemcachePool
+  end # Adapters
+end # Cachetastic
