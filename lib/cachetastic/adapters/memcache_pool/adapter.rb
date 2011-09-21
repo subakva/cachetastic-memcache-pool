@@ -104,6 +104,7 @@ module Cachetastic # :nodoc:
         end
 
         class << self
+          # JDW: TODO: Extract all of this into a MemCachePool class, and add the ability to do true thread-safe pooling
           def reset_connections
             @_connections_by_klass = {}
             @_connections_by_digest = {}
