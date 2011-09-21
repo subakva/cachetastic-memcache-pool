@@ -58,12 +58,11 @@ module Cachetastic # :nodoc:
         
         def expire_all # :nodoc:
           increment_version
-          @_mc_connection = nil
           return nil
         end # expire_all
         
         def transform_key(key) # :nodoc:
-          key.to_s.hexdigest
+          namespace + ':' + key.to_s.hexdigest
         end
         
         # Return <tt>false</tt> if the connection to Memcached is
@@ -76,10 +75,7 @@ module Cachetastic # :nodoc:
         
         private
         def connection
-          unless @_mc_connection && valid? && @_ns_version == get_version
-            @_mc_connection = MemCache.new(self.servers, self.mc_options.merge(:namespace => namespace))
-          end
-          @_mc_connection
+          self.class.data_connection(self)
         end
 
         def ns_connection
@@ -109,6 +105,8 @@ module Cachetastic # :nodoc:
 
         class << self
           def reset_connections
+            @_connections_by_klass = {}
+            @_connections_by_digest = {}
             @_ns_connections_by_klass = {}
             @_ns_connections_by_digest = {}
           end
@@ -117,20 +115,29 @@ module Cachetastic # :nodoc:
             {:servers => adapter.servers, :mc_options => adapter.mc_options}.to_s.hexdigest
           end
 
+          def data_connection(adapter)
+            @_connections_by_klass   ||= {}
+            @_connections_by_digest  ||= {}
+            return get_connection(adapter, @_connections_by_klass, @_connections_by_digest, nil)
+          end
+
           def ns_connection(adapter)
             @_ns_connections_by_klass   ||= {}
             @_ns_connections_by_digest  ||= {}
+            return get_connection(adapter, @_ns_connections_by_klass, @_ns_connections_by_digest, :namespace_versions)
+          end
 
-            matching_connection = @_ns_connections_by_klass[adapter.klass.name]
+          def get_connection(adapter, connections_by_class, connections_by_digest, namespace)
+            matching_connection = connections_by_class[adapter.klass.name]
             if !matching_connection || !matching_connection.active?
               digest = connection_digest(adapter)
-              matching_connection = @_ns_connections_by_digest[digest]
+              matching_connection = connections_by_digest[digest]
               if !matching_connection || !matching_connection.active?
-                matching_connection = MemCache.new(adapter.servers, adapter.mc_options.merge(:namespace => :namespace_versions))
+                matching_connection = MemCache.new(adapter.servers, adapter.mc_options.merge(:namespace => namespace))
               end
-              @_ns_connections_by_digest[digest] = matching_connection
+              connections_by_digest[digest] = matching_connection
             end
-            @_ns_connections_by_klass[adapter.klass.name] = matching_connection
+            connections_by_class[adapter.klass.name] = matching_connection
             matching_connection
           end
         end
