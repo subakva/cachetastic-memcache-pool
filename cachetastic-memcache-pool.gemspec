@@ -22,5 +22,5 @@ Gem::Specification.new do |s|
   s.add_development_dependency "rcov", "~> 0.9.0"
 
   s.add_runtime_dependency "cachetastic", "~> 3.0.0"
-  s.add_runtime_dependency "memcache-client", "~> 1.8.5"
+  s.add_runtime_dependency "memcache-client", "~> 1.8.1"
 end
